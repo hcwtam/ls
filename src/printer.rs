@@ -1,9 +1,9 @@
-use std::{fs, io, path, process};
+use std::{collections::HashSet, fs, io, process};
 
 use super::cli::Config;
 
-fn write_entries<W: io::Write>(dir: String, writer: &mut W) {
-    let mut paths = fs::read_dir(dir)
+fn write_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<String>) {
+    let mut paths = fs::read_dir(&dir)
         .unwrap_or_else(|err| {
             eprintln!("Problem reading input directory: {}", err);
             process::exit(1);
@@ -18,12 +18,15 @@ fn write_entries<W: io::Write>(dir: String, writer: &mut W) {
     paths.sort();
 
     for path in paths {
-        let entry: path::PathBuf = path.iter().skip(1).collect(); // e.g. src/lib.rs => lib.rs
-        let entry = entry.display().to_string();
-        if entry.chars().next().unwrap() == '.' {
+        let entry = path.strip_prefix(&dir).unwrap().display().to_string(); // e.g. src/lib.rs => lib.rs
+        if entry.chars().next().unwrap() == '.' && !flags.contains("-a") {
             continue; // skip hidden files
         } else if path.is_dir() {
-            write!(writer, "\x1b[34;1m{}\x1b[0m  ", entry).unwrap();
+            if flags.contains("-F") {
+                write!(writer, "\x1b[34;1m{}/\x1b[0m  ", entry).unwrap(); // append "/" to directory
+            } else {
+                write!(writer, "\x1b[34;1m{}\x1b[0m  ", entry).unwrap();
+            }
         } else {
             write!(writer, "{}  ", entry).unwrap();
         }
@@ -32,12 +35,13 @@ fn write_entries<W: io::Write>(dir: String, writer: &mut W) {
 
 fn write_results<W: io::Write>(cli: Config, writer: &mut W) {
     let dir_len = cli.directories.len();
+
     for (i, dir) in cli.directories.into_iter().enumerate() {
         if dir_len > 1 {
             writeln!(writer, "{}:", dir).unwrap();
         }
 
-        write_entries(dir, writer);
+        write_entries(dir, writer, &cli.flags);
         writeln!(writer).unwrap();
 
         if i < dir_len - 1 {
@@ -69,9 +73,48 @@ mod tests {
 
     #[test]
     fn print_multiple_dir() {
-        let want = "tests/tests1:\ntests1/a  tests1/b  \n\ntests/tests2:\ntests2/c  tests2/d  \n";
+        let want = "tests/tests1:\na  b  \n\ntests/tests2:\nc  d  \n";
 
-        let cli = Config::new(vec![String::from("program_name"), String::from("tests/tests1"), String::from("tests/tests2")]).unwrap();
+        let cli = Config::new(vec![
+            String::from("program_name"),
+            String::from("tests/tests1"),
+            String::from("tests/tests2"),
+        ])
+        .unwrap();
+        let mut stdout = vec![];
+
+        write_results(cli, &mut stdout);
+
+        assert_eq!(want, str::from_utf8(&stdout).unwrap());
+    }
+
+    #[test]
+    fn print_with_a_flag() {
+        let want = ".bye  hi  \n";
+
+        let cli = Config::new(vec![
+            String::from("program_name"),
+            String::from("tests/hello"),
+            String::from("-a"),
+        ])
+        .unwrap();
+        let mut stdout = vec![];
+
+        write_results(cli, &mut stdout);
+
+        assert_eq!(want, str::from_utf8(&stdout).unwrap());
+    }
+
+    #[test]
+    fn print_with_uppercase_f_flag() {
+        let want = "abc  \u{1b}[34;1mhello/\u{1b}[0m  test_file  \u{1b}[34;1mtests1/\u{1b}[0m  \u{1b}[34;1mtests2/\u{1b}[0m  \n";
+
+        let cli = Config::new(vec![
+            String::from("program_name"),
+            String::from("tests"),
+            String::from("-F"),
+        ])
+        .unwrap();
         let mut stdout = vec![];
 
         write_results(cli, &mut stdout);

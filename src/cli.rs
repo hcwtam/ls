@@ -1,14 +1,16 @@
+use std::collections::HashSet;
+
 #[derive(Debug, PartialEq)]
 pub struct Config {
     pub directories: Vec<String>,
-    pub flags: Vec<String>,
+    pub flags: HashSet<String>,
 }
 
 impl Default for Config {
     fn default() -> Config {
         Config {
             directories: vec![],
-            flags: vec![],
+            flags: HashSet::new(),
         }
     }
 }
@@ -28,8 +30,7 @@ impl Config {
 
         for arg in iter {
             match arg.chars().next().unwrap() {
-                '-' => cli.flags.push(arg),
-                '.' => continue,
+                '-' => _ = cli.flags.insert(arg),
                 _ => cli.directories.push(arg),
             }
         }
@@ -46,7 +47,7 @@ mod tests {
     fn config_empty_args() {
         let want = Config {
             directories: vec![String::from(".")],
-            flags: vec![],
+            flags: HashSet::new(),
         };
         let get = Config::new(vec![String::from("program_name")]).unwrap();
         assert_eq!(want, get);
@@ -59,7 +60,7 @@ mod tests {
                 .into_iter()
                 .map(|a| String::from(a))
                 .collect(),
-            flags: vec![],
+            flags: HashSet::new(),
         };
 
         let get = Config::new(
@@ -79,7 +80,7 @@ mod tests {
             flags: vec!["-la", "-d"]
                 .into_iter()
                 .map(|a| String::from(a))
-                .collect(),
+                .collect::<HashSet<String>>(),
         };
 
         let get = Config::new(
