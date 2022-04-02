@@ -1,32 +1,12 @@
-use std::{env, error, fs, io};
+use std::{env, process};
 
-fn main() -> Result<(), Box<dyn error::Error>> {
-    let arguments: Vec<String> = env::args().collect();
+use ls::{cli, printer};
 
-    if arguments.len() == 1 {
-        let mut paths = fs::read_dir(".")?
-            .map(|res| res.map(|e| e.path()))
-            .collect::<Result<Vec<_>, io::Error>>()?;
+fn main() {
+    let config = cli::Config::new(env::args().collect()).unwrap_or_else(|err| {
+        eprintln!("Problem parsing arguments: {}", err);
+        process::exit(1);
+    });
 
-        paths.sort();
-
-        for path in paths {
-            let entry = &path.display().to_string()[2..];
-            if entry.chars().next().unwrap() == '.' {
-                continue;
-            } else if path.is_dir() {
-                print!("\x1b[34;1m{}\x1b[0m  ", entry);
-            } else {
-                print!("{}  ", entry);
-            }
-        }
-        println!();
-        return Ok(());
-    }
-
-    for argument in arguments {
-        println!("{}", argument)
-    }
-
-    Ok(())
+    printer::print(config);
 }
