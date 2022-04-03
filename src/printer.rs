@@ -17,19 +17,29 @@ fn write_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<Stri
 
     paths.sort();
 
+        if flags.contains("-a") {
+            write_dir_entry(String::from("."), flags.contains("-F"), writer);
+            write_dir_entry(String::from(".."), flags.contains("-F"), writer);
+        }
+
     for path in paths {
         let entry = path.strip_prefix(&dir).unwrap().display().to_string(); // e.g. src/lib.rs => lib.rs
         if entry.chars().next().unwrap() == '.' && !flags.contains("-a") {
-            continue; // skip hidden files
+            continue; // skip hidden files if -a is not enabled
         } else if path.is_dir() {
-            if flags.contains("-F") {
-                write!(writer, "\x1b[34;1m{}/\x1b[0m  ", entry).unwrap(); // append "/" to directory
-            } else {
-                write!(writer, "\x1b[34;1m{}\x1b[0m  ", entry).unwrap();
-            }
+            write_dir_entry(entry, flags.contains("-F"), writer);
         } else {
             write!(writer, "{}  ", entry).unwrap();
         }
+    }
+}
+
+// append "/" to directory if "-F" enabled
+fn write_dir_entry<W: io::Write>(entry: String, enabled: bool, writer: &mut W) {
+    if enabled {
+        write!(writer, "\x1b[34;1m{}/\x1b[0m  ", entry).unwrap(); 
+    } else {
+        write!(writer, "\x1b[34;1m{}\x1b[0m  ", entry).unwrap();
     }
 }
 
@@ -90,7 +100,7 @@ mod tests {
 
     #[test]
     fn print_with_a_flag() {
-        let want = ".bye  hi  \n";
+        let want = "\u{1b}[34;1m.\u{1b}[0m  \u{1b}[34;1m..\u{1b}[0m  .bye  hi  \n";
 
         let cli = Config::new(vec![
             String::from("program_name"),
