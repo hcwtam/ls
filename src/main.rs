@@ -1,6 +1,5 @@
 /**
  * TODOs:
- * - seperate flags if combined (e.g. -la becomes l and a), make flags field HashMap(char)
  * - Add more flag functionalities (-l, -h, -S, -t, -r)
  */
 

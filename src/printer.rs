@@ -2,7 +2,7 @@ use std::{collections::HashSet, fs, io, process};
 
 use super::cli::Config;
 
-fn write_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<String>) {
+fn write_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<char>) {
     let mut paths = fs::read_dir(&dir)
         .unwrap_or_else(|err| {
             eprintln!("Problem reading input directory: {}", err);
@@ -17,17 +17,17 @@ fn write_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<Stri
 
     paths.sort();
 
-        if flags.contains("-a") {
-            write_dir_entry(String::from("."), flags.contains("-F"), writer);
-            write_dir_entry(String::from(".."), flags.contains("-F"), writer);
+        if flags.contains(&'a') {
+            write_dir_entry(String::from("."), flags.contains(&'F'), writer);
+            write_dir_entry(String::from(".."), flags.contains(&'F'), writer);
         }
 
     for path in paths {
         let entry = path.strip_prefix(&dir).unwrap().display().to_string(); // e.g. src/lib.rs => lib.rs
-        if entry.chars().next().unwrap() == '.' && !flags.contains("-a") {
+        if entry.chars().next().unwrap() == '.' && !flags.contains(&'a') {
             continue; // skip hidden files if -a is not enabled
         } else if path.is_dir() {
-            write_dir_entry(entry, flags.contains("-F"), writer);
+            write_dir_entry(entry, flags.contains(&'F'), writer);
         } else {
             write!(writer, "{}  ", entry).unwrap();
         }

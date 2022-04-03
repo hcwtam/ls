@@ -3,7 +3,7 @@ use std::collections::HashSet;
 #[derive(Debug, PartialEq)]
 pub struct Config {
     pub directories: Vec<String>,
-    pub flags: HashSet<String>,
+    pub flags: HashSet<char>,
 }
 
 impl Default for Config {
@@ -19,7 +19,7 @@ impl Config {
     pub fn new(args: Vec<String>) -> Result<Config, &'static str> {
         let mut cli = Config::default();
 
-        // // No arguments provided
+        // No arguments provided
         if args.len() == 1 {
             cli.directories.push(String::from("."));
         };
@@ -30,7 +30,15 @@ impl Config {
 
         for arg in iter {
             match arg.chars().next().unwrap() {
-                '-' => _ = cli.flags.insert(arg),
+                '-' => {
+                    let flags_iter = arg.chars().enumerate();
+                    for (i, flag) in flags_iter {
+                        if i == 0 {
+                            continue;
+                        }
+                        _ = cli.flags.insert(flag);
+                    }
+                }
                 _ => cli.directories.push(arg),
             }
         }
@@ -77,10 +85,7 @@ mod tests {
     fn config_flags_args() {
         let want = Config {
             directories: vec![],
-            flags: vec!["-la", "-d"]
-                .into_iter()
-                .map(|a| String::from(a))
-                .collect::<HashSet<String>>(),
+            flags: vec!['l', 'a', 'd'].into_iter().collect::<HashSet<char>>(),
         };
 
         let get = Config::new(
@@ -100,10 +105,7 @@ mod tests {
                 .into_iter()
                 .map(|a| String::from(a))
                 .collect(),
-            flags: vec!["-la", "-d"]
-                .into_iter()
-                .map(|a| String::from(a))
-                .collect(),
+            flags: vec!['l', 'a', 'd'].into_iter().collect::<HashSet<char>>(),
         };
 
         let get = Config::new(
