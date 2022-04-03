@@ -1,7 +1,15 @@
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::{collections::HashSet, fs, io, process};
 
+use chrono::{TimeZone, Utc};
+use users;
+
 use super::cli::Config;
+
+const KILO: f64 = 1000.0;
+const MEGA: f64 = KILO * 1000.0;
+const GIGA: f64 = MEGA * 1000.0;
+const TERA: f64 = GIGA * 1000.0;
 
 fn write_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<char>) {
     let mut paths = fs::read_dir(&dir)
@@ -19,8 +27,8 @@ fn write_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<char
     paths.sort();
 
     if flags.contains(&'a') {
-        write_dir_entry(String::from("."), flags.contains(&'F'), writer);
-        write_dir_entry(String::from(".."), flags.contains(&'F'), writer);
+        write_dir_entry(".", flags.contains(&'F'), writer);
+        write_dir_entry("..", flags.contains(&'F'), writer);
     }
 
     for path in paths {
@@ -28,15 +36,56 @@ fn write_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<char
         if entry.chars().next().unwrap() == '.' && !flags.contains(&'a') {
             continue; // skip hidden files if -a is not enabled
         } else if path.is_dir() {
-            write_dir_entry(entry, flags.contains(&'F'), writer);
+            write_dir_entry(&entry, flags.contains(&'F'), writer);
         } else {
             write!(writer, "{}  ", entry).unwrap();
         }
     }
 }
 
+// When -l is enabled
+fn write_long_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<char>) {
+    let mut paths = fs::read_dir(&dir)
+        .unwrap_or_else(|err| {
+            eprintln!("Problem reading input directory: {}", err);
+            process::exit(1);
+        })
+        .map(|res| res.map(|e| e.path()))
+        .collect::<Result<Vec<_>, io::Error>>()
+        .unwrap_or_else(|err| {
+            eprintln!("Problem parsing input directory: {}", err);
+            process::exit(1);
+        });
+
+    paths.sort();
+
+    if flags.contains(&'a') {
+        write_metadata(".", writer);
+        write_dir_entry(".", flags.contains(&'F'), writer);
+        writeln!(writer).unwrap();
+
+        write_metadata("..", writer);
+        write_dir_entry("..", flags.contains(&'F'), writer);
+        writeln!(writer).unwrap();
+    }
+
+    for path in paths {
+        let entry = path.strip_prefix(&dir).unwrap().display().to_string(); // e.g. src/lib.rs => lib.rs
+        if entry.chars().next().unwrap() == '.' && !flags.contains(&'a') {
+            continue; // skip hidden files if -a is not enabled
+        } else if path.is_dir() {
+            write_metadata(&path.display().to_string(), writer);
+            write_dir_entry(&entry, flags.contains(&'F'), writer);
+            writeln!(writer).unwrap();
+        } else {
+            write_metadata(&path.display().to_string(), writer);
+            writeln!(writer, "{}", entry).unwrap();
+        }
+    }
+}
+
 // append "/" to directory if "-F" enabled
-fn write_dir_entry<W: io::Write>(entry: String, enabled: bool, writer: &mut W) {
+fn write_dir_entry<W: io::Write>(entry: &str, enabled: bool, writer: &mut W) {
     if enabled {
         write!(writer, "\x1b[34;1m{}/\x1b[0m  ", entry).unwrap();
     } else {
@@ -46,13 +95,14 @@ fn write_dir_entry<W: io::Write>(entry: String, enabled: bool, writer: &mut W) {
 
 fn write_metadata<W: io::Write>(path: &str, writer: &mut W) {
     // Read and get metadata
-    let metadata = fs::metadata("the_egg.txt").unwrap();
+    let metadata = fs::metadata(path).unwrap();
 
     // Permissions
     let modes = metadata.permissions().mode();
 
-    let permissions = &format!("{:b}", modes)[7..];
     let is_dir = if metadata.is_dir() { 'd' } else { '-' };
+    let index = if metadata.is_dir() { 6 } else { 7 };
+    let permissions = &format!("{:b}", modes)[index..];
 
     let mut permissions_output = String::from(is_dir);
     for (i, bit) in permissions.chars().enumerate() {
@@ -68,15 +118,47 @@ fn write_metadata<W: io::Write>(path: &str, writer: &mut W) {
         permissions_output.push(symbol);
     }
 
-    // 1 : number of linked hard-links
+    // owner of the file
+    let owner_uid = metadata.uid();
+    let owner = users::get_user_by_uid(owner_uid).unwrap();
+    let owner_name = owner.name().to_string_lossy();
 
-    // lilo: owner of the file
+    // file size
+    let file_size = metadata.len() as f64;
+    let size = if file_size >= TERA {
+        format!("{:.3}T", file_size / TERA)
+    } else if file_size >= GIGA {
+        format!("{:.3}G", file_size / GIGA)
+    } else if file_size >= MEGA {
+        format!("{:.3}M", file_size / MEGA)
+    } else if file_size >= KILO {
+        format!("{:.3}k", file_size / KILO)
+    } else {
+        if file_size > 100.0 {
+            format!("  {} ", file_size)
+        } else if file_size > 10.0 {
+            format!("   {} ", file_size)
+        } else {
+            format!("    {} ", file_size)
+        }
+    };
 
-    // lilo: to which group this file belongs to
+    // modification date and time
+    let timestamp = metadata.mtime();
+    let modification_time = Utc
+        .timestamp(timestamp, 0)
+        .format("%Y %b %e %T")
+        .to_string();
 
-    // 0: size
-
-    // Feb 26 07:08 modification/creation date and time
+    write!(
+        writer,
+        "\u{1b}[35;1m{}\u{1b}[0m \
+    \u{1b}[33;1m{}\u{1b}[0m \
+    \u{1b}[32;1m{}\u{1b}[0m \
+    \u{1b}[36;1m{}\u{1b}[0m ",
+        permissions_output, owner_name, size, modification_time
+    )
+    .unwrap();
 }
 
 fn write_results<W: io::Write>(cli: Config, writer: &mut W) {
@@ -87,7 +169,11 @@ fn write_results<W: io::Write>(cli: Config, writer: &mut W) {
             writeln!(writer, "{}:", dir).unwrap();
         }
 
-        write_entries(dir, writer, &cli.flags);
+        if cli.flags.contains(&'l') {
+            write_long_entries(dir, writer, &cli.flags);
+        } else {
+            write_entries(dir, writer, &cli.flags);
+        }
         writeln!(writer).unwrap();
 
         if i < dir_len - 1 {
@@ -159,6 +245,24 @@ mod tests {
             String::from("program_name"),
             String::from("tests"),
             String::from("-F"),
+        ])
+        .unwrap();
+        let mut stdout = vec![];
+
+        write_results(cli, &mut stdout);
+
+        assert_eq!(want, str::from_utf8(&stdout).unwrap());
+    }
+
+    #[test]
+    fn print_with_l_flag() {
+        let want = "tests/tests1:\n\u{1b}[35;1m-rw-rw-r--\u{1b}[0m \u{1b}[33;1mw\u{1b}[0m \u{1b}[32;1m    0 \u{1b}[0m \u{1b}[36;1m2022 Apr  2 13:34:42\u{1b}[0m a\n\u{1b}[35;1m-rw-rw-r--\u{1b}[0m \u{1b}[33;1mw\u{1b}[0m \u{1b}[32;1m    0 \u{1b}[0m \u{1b}[36;1m2022 Apr  2 13:34:46\u{1b}[0m b\n\n\ntests/tests2:\n\u{1b}[35;1m-rw-rw-r--\u{1b}[0m \u{1b}[33;1mw\u{1b}[0m \u{1b}[32;1m    0 \u{1b}[0m \u{1b}[36;1m2022 Apr  2 13:34:52\u{1b}[0m c\n\u{1b}[35;1m-rw-rw-r--\u{1b}[0m \u{1b}[33;1mw\u{1b}[0m \u{1b}[32;1m    0 \u{1b}[0m \u{1b}[36;1m2022 Apr  2 13:34:54\u{1b}[0m d\n\n";
+
+        let cli = Config::new(vec![
+            String::from("program_name"),
+            String::from("tests/tests1"),
+            String::from("tests/tests2"),
+            String::from("-l"),
         ])
         .unwrap();
         let mut stdout = vec![];
