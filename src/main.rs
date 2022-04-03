@@ -3,7 +3,8 @@
  * - Add more flag functionalities (-l, -h, -S, -t, -r)
  */
 
-use std::{env, process};
+use std::{env, process, fs};
+use std::os::unix::fs::PermissionsExt;
 
 use ls::{cli, printer};
 

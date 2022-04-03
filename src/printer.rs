@@ -1,3 +1,4 @@
+use std::os::unix::fs::PermissionsExt;
 use std::{collections::HashSet, fs, io, process};
 
 use super::cli::Config;
@@ -17,10 +18,10 @@ fn write_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<char
 
     paths.sort();
 
-        if flags.contains(&'a') {
-            write_dir_entry(String::from("."), flags.contains(&'F'), writer);
-            write_dir_entry(String::from(".."), flags.contains(&'F'), writer);
-        }
+    if flags.contains(&'a') {
+        write_dir_entry(String::from("."), flags.contains(&'F'), writer);
+        write_dir_entry(String::from(".."), flags.contains(&'F'), writer);
+    }
 
     for path in paths {
         let entry = path.strip_prefix(&dir).unwrap().display().to_string(); // e.g. src/lib.rs => lib.rs
@@ -37,10 +38,45 @@ fn write_entries<W: io::Write>(dir: String, writer: &mut W, flags: &HashSet<char
 // append "/" to directory if "-F" enabled
 fn write_dir_entry<W: io::Write>(entry: String, enabled: bool, writer: &mut W) {
     if enabled {
-        write!(writer, "\x1b[34;1m{}/\x1b[0m  ", entry).unwrap(); 
+        write!(writer, "\x1b[34;1m{}/\x1b[0m  ", entry).unwrap();
     } else {
         write!(writer, "\x1b[34;1m{}\x1b[0m  ", entry).unwrap();
     }
+}
+
+fn write_metadata<W: io::Write>(path: &str, writer: &mut W) {
+    // Read and get metadata
+    let metadata = fs::metadata("the_egg.txt").unwrap();
+
+    // Permissions
+    let modes = metadata.permissions().mode();
+
+    let permissions = &format!("{:b}", modes)[7..];
+    let is_dir = if metadata.is_dir() { 'd' } else { '-' };
+
+    let mut permissions_output = String::from(is_dir);
+    for (i, bit) in permissions.chars().enumerate() {
+        let mut symbol = '-';
+        if bit == '1' {
+            symbol = match i % 3 {
+                0 => 'r',
+                1 => 'w',
+                2 => 'x',
+                _ => unreachable!(),
+            }
+        }
+        permissions_output.push(symbol);
+    }
+
+    // 1 : number of linked hard-links
+
+    // lilo: owner of the file
+
+    // lilo: to which group this file belongs to
+
+    // 0: size
+
+    // Feb 26 07:08 modification/creation date and time
 }
 
 fn write_results<W: io::Write>(cli: Config, writer: &mut W) {
